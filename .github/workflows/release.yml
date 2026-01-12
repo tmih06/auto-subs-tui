@@ -43,8 +43,10 @@ jobs:
           Terminal=true
           EOF
           
-          # Create a simple icon (placeholder)
-          convert -size 256x256 xc:#00c8ff -fill white -gravity center -pointsize 48 -annotate 0 "AST" AppDir/usr/share/icons/hicolor/256x256/apps/auto-subs-tui.png || true
+          # Resize img1.png to use as icon
+          sudo apt-get install -y imagemagick
+          convert img1.png -resize 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/auto-subs-tui. png
+          cp AppDir/usr/share/icons/hicolor/256x256/apps/auto-subs-tui.png AppDir/auto-subs-tui.png
           
           # Create AppRun
           cat > AppDir/AppRun << 'EOF'
