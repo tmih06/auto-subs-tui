@@ -2,12 +2,17 @@
 
 A terminal-based user interface application for creating and editing video subtitles, built in Rust.
 
+![Home Screen](assets/img1.png)
+
 ## Features
 
 - **Extract Audio**: Automatically extract audio from video files (MP4, MKV, AVI, MOV, WebM, etc.)
 - **Generate Subtitles**: Transcribe speech to text using OpenAI's Whisper model (runs locally)
 - **Edit Subtitles**: Review and edit generated subtitles with a full-featured TUI editor
 - **Burn Subtitles**: Hardcode subtitles into the video file
+- **CLI Mode**: Run headless without TUI for scripting/automation
+
+![Subtitle Editor](assets/img2.png)
 
 ## Requirements
 
@@ -59,6 +64,16 @@ cargo run --release
 3. **Wait for processing**: Audio extraction and transcription happen automatically
 4. **Edit subtitles**: Review and modify the generated subtitles
 5. **Burn to video**: Press `B` to hardcode subtitles into the video
+
+### CLI Mode (Headless)
+
+For scripting or automation, use CLI mode:
+
+```bash
+./target/release/auto-subs-tui --cli video.mp4
+```
+
+This runs the full pipeline without the TUI interface.
 
 ### Keyboard Shortcuts
 
