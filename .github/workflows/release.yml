@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libclang-dev ffmpeg
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Create AppImage directory structure
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          cp target/release/auto-subs-tui AppDir/usr/bin/
+          
+          # Create desktop file
+          cat > AppDir/usr/share/applications/auto-subs-tui.desktop << EOF
+          [Desktop Entry]
+          Name=Auto-Subs TUI
+          Exec=auto-subs-tui
+          Icon=auto-subs-tui
+          Type=Application
+          Categories=AudioVideo;
+          Terminal=true
+          EOF
+          
+          # Create a simple icon (placeholder)
+          convert -size 256x256 xc:#00c8ff -fill white -gravity center -pointsize 48 -annotate 0 "AST" AppDir/usr/share/icons/hicolor/256x256/apps/auto-subs-tui.png || true
+          
+          # Create AppRun
+          cat > AppDir/AppRun << 'EOF'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          export PATH="${HERE}/usr/bin:${PATH}"
+          exec "${HERE}/usr/bin/auto-subs-tui" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+          
+          # Copy desktop file to root
+          cp AppDir/usr/share/applications/auto-subs-tui.desktop AppDir/
+
+      - name: Download appimagetool
+        run: |
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+
+      - name: Create AppImage
+        run: |
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir auto-subs-tui-linux-x86_64.AppImage
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binary
+          path: |
+            target/release/auto-subs-tui
+            auto-subs-tui-linux-x86_64.AppImage
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM
+        run: choco install llvm -y
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Build release
+        env:
+          LIBCLANG_PATH: "C:\\Program Files\\LLVM\\bin"
+        run: cargo build --release
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binary
+          path: target/release/auto-subs-tui.exe
+
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binary
+          path: ./linux
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binary
+          path: ./windows
+
+      - name: Prepare release files
+        run: |
+          mv linux/target/release/auto-subs-tui auto-subs-tui-linux-x86_64
+          mv linux/auto-subs-tui-linux-x86_64.AppImage .
+          mv windows/auto-subs-tui.exe auto-subs-tui-windows-x86_64.exe
+          chmod +x auto-subs-tui-linux-x86_64
+          chmod +x auto-subs-tui-linux-x86_64.AppImage
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            auto-subs-tui-linux-x86_64
+            auto-subs-tui-linux-x86_64.AppImage
+            auto-subs-tui-windows-x86_64.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

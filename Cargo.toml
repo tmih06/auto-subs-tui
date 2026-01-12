@@ -1,0 +1,31 @@
+[package]
+name = "auto-subs-tui"
+version = "0.1.0"
+edition = "2021"
+description = "TUI app for creating and editing video subtitles"
+
+[dependencies]
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# FFmpeg operations  
+ffmpeg-sidecar = "2.0"
+
+# Speech-to-text
+whisper-rs = "0.14"
+
+# Subtitle handling
+srtlib = "0.1"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Utilities
+dirs = "5.0"
+hound = "3.5"  # WAV file reading for whisper
+ureq = "2.9"   # HTTP client for model download
