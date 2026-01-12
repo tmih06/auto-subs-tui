@@ -19,8 +19,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libclang-dev ffmpeg
 
-      - name: Install Rust
-        uses: dtolnay/install@v1
+      # - name: Install Rust
+      #   uses: dtolnay/install@v1
 
       - name: Build release
         run: cargo build --release
@@ -84,8 +84,8 @@ jobs:
       - name: Install LLVM
         run: choco install llvm -y
 
-      - name: Install Rust
-        uses: dtolnay/install@v1
+      # - name: Install Rust
+      #   uses: dtolnay/install@v1
 
       - name: Build release
         env:
