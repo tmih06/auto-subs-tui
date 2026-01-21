@@ -117,7 +117,7 @@ impl SubtitleGenerator {
             "Processing segments...".to_string(),
         ));
 
-        // Extract segments
+        // Extract segments and split into sentences
         let num_segments = state.full_n_segments().context("Failed to get segment count")?;
         let mut subtitles = Vec::new();
 
@@ -128,7 +128,37 @@ impl SubtitleGenerator {
 
             let text = text.trim().to_string();
             if !text.is_empty() {
-                subtitles.push(Subtitle::new(subtitles.len() + 1, start, end, text));
+                // Split text into sentences for more detailed subtitles
+                let sentences = self.split_into_sentences(&text);
+                
+                if sentences.len() == 1 {
+                    // Single sentence or short text - keep as is
+                    subtitles.push(Subtitle::new(subtitles.len() + 1, start, end, text));
+                } else {
+                    // Multiple sentences - distribute time proportionally
+                    let total_duration = end - start;
+                    let total_chars: usize = sentences.iter().map(|s| s.len()).sum();
+                    
+                    let mut current_time = start;
+                    for sentence in sentences {
+                        if sentence.is_empty() {
+                            continue;
+                        }
+                        
+                        // Calculate duration based on sentence length
+                        let sentence_duration = (total_duration as f64 * sentence.len() as f64 / total_chars as f64) as u64;
+                        let sentence_end = (current_time + sentence_duration).min(end);
+                        
+                        subtitles.push(Subtitle::new(
+                            subtitles.len() + 1,
+                            current_time,
+                            sentence_end,
+                            sentence.to_string(),
+                        ));
+                        
+                        current_time = sentence_end;
+                    }
+                }
             }
         }
 
@@ -175,5 +205,49 @@ impl SubtitleGenerator {
         };
 
         Ok(samples)
+    }
+
+    /// Split text into sentences for more detailed subtitles
+    fn split_into_sentences<'a>(&self, text: &'a str) -> Vec<&'a str> {
+        let mut sentences = Vec::new();
+        let mut start = 0;
+        let chars: Vec<char> = text.chars().collect();
+        
+        for (i, ch) in chars.iter().enumerate() {
+            // Check for sentence endings: . ! ?
+            if matches!(ch, '.' | '!' | '?') {
+                // Look ahead to see if there's a space or end of string
+                let is_sentence_end = if i + 1 < chars.len() {
+                    // Next char should be space, quote, or another punctuation
+                    matches!(chars[i + 1], ' ' | '"' | '\'' | ')' | ']')
+                } else {
+                    true // End of string
+                };
+                
+                if is_sentence_end {
+                    let end = text.char_indices().nth(i + 1).map(|(pos, _)| pos).unwrap_or(text.len());
+                    let sentence = text[start..end].trim();
+                    if !sentence.is_empty() {
+                        sentences.push(sentence);
+                    }
+                    start = end;
+                }
+            }
+        }
+        
+        // Add remaining text if any
+        if start < text.len() {
+            let sentence = text[start..].trim();
+            if !sentence.is_empty() {
+                sentences.push(sentence);
+            }
+        }
+        
+        // If no sentences were found, return the whole text
+        if sentences.is_empty() {
+            sentences.push(text.trim());
+        }
+        
+        sentences
     }
 }

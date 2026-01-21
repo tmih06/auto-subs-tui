@@ -161,6 +161,17 @@ impl App {
         }
     }
 
+    pub fn load_srt_file(&mut self, path: &PathBuf) -> Result<()> {
+        use crate::subtitle::srt;
+        
+        self.subtitles = srt::parse_srt(path)?;
+        self.srt_path = Some(path.clone());
+        self.state = AppState::Editing;
+        self.selected_index = 0;
+        
+        Ok(())
+    }
+
     pub async fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<()> {
         loop {
             // Check for progress updates
