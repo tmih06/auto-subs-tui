@@ -20,7 +20,10 @@ impl AudioExtractor {
         output_path: &Path,
         progress_tx: Sender<ProgressMessage>,
     ) -> Result<()> {
-        let _ = progress_tx.send(ProgressMessage::Progress(0.1, "Starting FFmpeg...".to_string()));
+        let _ = progress_tx.send(ProgressMessage::Progress(
+            0.1,
+            "Starting FFmpeg...".to_string(),
+        ));
 
         // Check if ffmpeg is available
         Command::new("ffmpeg")
@@ -30,7 +33,10 @@ impl AudioExtractor {
             .status()
             .context("FFmpeg not found. Please install FFmpeg and ensure it's in your PATH.")?;
 
-        let _ = progress_tx.send(ProgressMessage::Progress(0.2, "Extracting audio...".to_string()));
+        let _ = progress_tx.send(ProgressMessage::Progress(
+            0.2,
+            "Extracting audio...".to_string(),
+        ));
 
         // Run ffmpeg to extract audio
         // -i input: input file
@@ -41,11 +47,15 @@ impl AudioExtractor {
         // -y: overwrite output file
         let output = Command::new("ffmpeg")
             .args([
-                "-i", video_path.to_str().unwrap(),
+                "-i",
+                video_path.to_str().unwrap(),
                 "-vn",
-                "-ar", "16000",
-                "-ac", "1",  
-                "-c:a", "pcm_s16le",
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_s16le",
                 "-y",
                 output_path.to_str().unwrap(),
             ])
@@ -59,7 +69,10 @@ impl AudioExtractor {
             anyhow::bail!("FFmpeg failed: {}", stderr);
         }
 
-        let _ = progress_tx.send(ProgressMessage::Progress(1.0, "Audio extraction complete!".to_string()));
+        let _ = progress_tx.send(ProgressMessage::Progress(
+            1.0,
+            "Audio extraction complete!".to_string(),
+        ));
         let _ = progress_tx.send(ProgressMessage::Complete);
 
         Ok(())

@@ -1,8 +1,8 @@
+use crate::app::ProgressMessage;
+use crate::audio::extractor::AudioExtractor;
+use crate::cli::args::ExtractArgs;
 use anyhow::Result;
 use std::sync::mpsc;
-use crate::audio::extractor::AudioExtractor;
-use crate::app::ProgressMessage;
-use crate::cli::args::ExtractArgs;
 
 pub async fn execute(args: ExtractArgs) -> Result<()> {
     println!("╔════════════════════════════════════════════════════════════╗");
@@ -15,9 +15,10 @@ pub async fn execute(args: ExtractArgs) -> Result<()> {
     }
 
     // Determine output path
-    let output_path = args.output.clone().unwrap_or_else(|| {
-        args.input.with_extension(args.format.as_str())
-    });
+    let output_path = args
+        .output
+        .clone()
+        .unwrap_or_else(|| args.input.with_extension(args.format.as_str()));
 
     println!("📹 Input video: {}", args.input.display());
     println!("🎵 Output audio: {}", output_path.display());
@@ -29,7 +30,7 @@ pub async fn execute(args: ExtractArgs) -> Result<()> {
     println!("Extracting audio...");
     let (tx, rx) = mpsc::channel();
     let extractor = AudioExtractor::new();
-    
+
     let input_clone = args.input.clone();
     let output_clone = output_path.clone();
     std::thread::spawn(move || {

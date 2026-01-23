@@ -14,24 +14,12 @@ pub async fn run() -> Result<()> {
 
     // Execute subcommand or launch TUI
     match cli.command {
-        Some(Commands::Process(args)) => {
-            commands::process::execute(args).await
-        }
-        Some(Commands::Extract(args)) => {
-            commands::extract::execute(args).await
-        }
-        Some(Commands::Transcribe(args)) => {
-            commands::transcribe::execute(args).await
-        }
-        Some(Commands::Burn(args)) => {
-            commands::burn::execute(args).await
-        }
-        Some(Commands::Edit(args)) => {
-            commands::edit::execute(args).await
-        }
-        Some(Commands::Config(args)) => {
-            commands::config::execute(args).await
-        }
+        Some(Commands::Process(args)) => commands::process::execute(args).await,
+        Some(Commands::Extract(args)) => commands::extract::execute(args).await,
+        Some(Commands::Transcribe(args)) => commands::transcribe::execute(args).await,
+        Some(Commands::Burn(args)) => commands::burn::execute(args).await,
+        Some(Commands::Edit(args)) => commands::edit::execute(args).await,
+        Some(Commands::Config(args)) => commands::config::execute(args).await,
         None => {
             // No subcommand provided - launch TUI mode
             launch_tui().await
@@ -83,16 +71,12 @@ fn restore_terminal() -> Result<()> {
     };
 
     disable_raw_mode()?;
-    execute!(
-        std::io::stdout(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(std::io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
     Ok(())
 }
 
 fn setup_logging(verbose: u8, quiet: bool) {
-    use tracing_subscriber::{EnvFilter, fmt};
+    use tracing_subscriber::{fmt, EnvFilter};
 
     if quiet {
         // Suppress all output except errors
@@ -106,11 +90,7 @@ fn setup_logging(verbose: u8, quiet: bool) {
         _ => "trace",
     };
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(level));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
 
-    fmt()
-        .with_env_filter(filter)
-        .with_target(false)
-        .init();
+    fmt().with_env_filter(filter).with_target(false).init();
 }

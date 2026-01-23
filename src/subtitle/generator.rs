@@ -6,6 +6,46 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 use crate::app::ProgressMessage;
 use crate::subtitle::srt::Subtitle;
 
+/// Temporarily redirect stderr to suppress Whisper's verbose output
+#[cfg(unix)]
+fn with_suppressed_stderr<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    use std::os::unix::io::AsRawFd;
+
+    // Save original stderr
+    let stderr_fd = std::io::stderr().as_raw_fd();
+    let saved_stderr = unsafe { libc::dup(stderr_fd) };
+
+    // Redirect stderr to /dev/null
+    let devnull = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/null")
+        .unwrap();
+    let devnull_fd = devnull.as_raw_fd();
+    unsafe { libc::dup2(devnull_fd, stderr_fd) };
+
+    // Run the function
+    let result = f();
+
+    // Restore original stderr
+    unsafe { libc::dup2(saved_stderr, stderr_fd) };
+    unsafe { libc::close(saved_stderr) };
+
+    result
+}
+
+#[cfg(not(unix))]
+fn with_suppressed_stderr<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    // On non-Unix systems, just run the function normally
+    // TODO: Implement for Windows if needed
+    f()
+}
+
 pub struct SubtitleGenerator {
     model_path: std::path::PathBuf,
 }
@@ -17,7 +57,7 @@ impl SubtitleGenerator {
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join("auto-subs-tui")
             .join("models");
-        
+
         Self {
             model_path: cache_dir.join("ggml-base.en.bin"),
         }
@@ -44,17 +84,17 @@ impl SubtitleGenerator {
         ));
 
         // Download the base.en model from Hugging Face
-        let model_url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
-        
+        let model_url =
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
+
         let response = ureq::get(model_url)
             .call()
             .context("Failed to download model")?;
-        
-        let mut file = std::fs::File::create(&self.model_path)
-            .context("Failed to create model file")?;
-        
-        std::io::copy(&mut response.into_reader(), &mut file)
-            .context("Failed to save model")?;
+
+        let mut file =
+            std::fs::File::create(&self.model_path).context("Failed to create model file")?;
+
+        std::io::copy(&mut response.into_reader(), &mut file).context("Failed to save model")?;
 
         let _ = progress_tx.send(ProgressMessage::Progress(
             0.1,
@@ -71,6 +111,17 @@ impl SubtitleGenerator {
         output_path: &Path,
         progress_tx: Sender<ProgressMessage>,
     ) -> Result<Vec<Subtitle>> {
+        // Wrap the entire generation in stderr suppression
+        with_suppressed_stderr(|| self.generate_internal(audio_path, output_path, progress_tx))
+    }
+
+    /// Internal generation function
+    fn generate_internal(
+        &self,
+        audio_path: &Path,
+        output_path: &Path,
+        progress_tx: Sender<ProgressMessage>,
+    ) -> Result<Vec<Subtitle>> {
         // Ensure model is available
         self.ensure_model(&progress_tx)?;
 
@@ -80,11 +131,11 @@ impl SubtitleGenerator {
         ));
 
         // Create Whisper context
-        let ctx = WhisperContext::new_with_params(
-            self.model_path.to_str().unwrap(),
-            WhisperContextParameters::default(),
-        )
-        .context("Failed to load Whisper model")?;
+        let mut ctx_params = WhisperContextParameters::default();
+        ctx_params.use_gpu(false);
+
+        let ctx = WhisperContext::new_with_params(self.model_path.to_str().unwrap(), ctx_params)
+            .context("Failed to load Whisper model")?;
 
         let _ = progress_tx.send(ProgressMessage::Progress(
             0.2,
@@ -109,8 +160,13 @@ impl SubtitleGenerator {
         params.set_token_timestamps(true);
 
         // Create state and run transcription
-        let mut state = ctx.create_state().context("Failed to create Whisper state")?;
-        state.full(params, &audio_data).context("Transcription failed")?;
+        let mut state = ctx
+            .create_state()
+            .context("Failed to create Whisper state")?;
+
+        state
+            .full(params, &audio_data)
+            .context("Transcription failed")?;
 
         let _ = progress_tx.send(ProgressMessage::Progress(
             0.9,
@@ -118,19 +174,29 @@ impl SubtitleGenerator {
         ));
 
         // Extract segments and split into sentences
-        let num_segments = state.full_n_segments().context("Failed to get segment count")?;
+        let num_segments = state
+            .full_n_segments()
+            .context("Failed to get segment count")?;
         let mut subtitles = Vec::new();
 
         for i in 0..num_segments {
-            let start = state.full_get_segment_t0(i).context("Failed to get start time")? as u64 * 10; // Convert to ms
-            let end = state.full_get_segment_t1(i).context("Failed to get end time")? as u64 * 10;
-            let text = state.full_get_segment_text(i).context("Failed to get text")?;
+            let start = state
+                .full_get_segment_t0(i)
+                .context("Failed to get start time")? as u64
+                * 10; // Convert to ms
+            let end = state
+                .full_get_segment_t1(i)
+                .context("Failed to get end time")? as u64
+                * 10;
+            let text = state
+                .full_get_segment_text(i)
+                .context("Failed to get text")?;
 
             let text = text.trim().to_string();
             if !text.is_empty() {
                 // Split text into sentences for more detailed subtitles
                 let sentences = self.split_into_sentences(&text);
-                
+
                 if sentences.len() == 1 {
                     // Single sentence or short text - keep as is
                     subtitles.push(Subtitle::new(subtitles.len() + 1, start, end, text));
@@ -138,24 +204,26 @@ impl SubtitleGenerator {
                     // Multiple sentences - distribute time proportionally
                     let total_duration = end - start;
                     let total_chars: usize = sentences.iter().map(|s| s.len()).sum();
-                    
+
                     let mut current_time = start;
                     for sentence in sentences {
                         if sentence.is_empty() {
                             continue;
                         }
-                        
+
                         // Calculate duration based on sentence length
-                        let sentence_duration = (total_duration as f64 * sentence.len() as f64 / total_chars as f64) as u64;
+                        let sentence_duration = (total_duration as f64 * sentence.len() as f64
+                            / total_chars as f64)
+                            as u64;
                         let sentence_end = (current_time + sentence_duration).min(end);
-                        
+
                         subtitles.push(Subtitle::new(
                             subtitles.len() + 1,
                             current_time,
                             sentence_end,
                             sentence.to_string(),
                         ));
-                        
+
                         current_time = sentence_end;
                     }
                 }
@@ -196,12 +264,10 @@ impl SubtitleGenerator {
                     .map(|s| s as f32 / max_value)
                     .collect()
             }
-            hound::SampleFormat::Float => {
-                reader
-                    .into_samples::<f32>()
-                    .filter_map(|s| s.ok())
-                    .collect()
-            }
+            hound::SampleFormat::Float => reader
+                .into_samples::<f32>()
+                .filter_map(|s| s.ok())
+                .collect(),
         };
 
         Ok(samples)
@@ -212,7 +278,7 @@ impl SubtitleGenerator {
         let mut sentences = Vec::new();
         let mut start = 0;
         let chars: Vec<char> = text.chars().collect();
-        
+
         for (i, ch) in chars.iter().enumerate() {
             // Check for sentence endings: . ! ?
             if matches!(ch, '.' | '!' | '?') {
@@ -223,9 +289,13 @@ impl SubtitleGenerator {
                 } else {
                     true // End of string
                 };
-                
+
                 if is_sentence_end {
-                    let end = text.char_indices().nth(i + 1).map(|(pos, _)| pos).unwrap_or(text.len());
+                    let end = text
+                        .char_indices()
+                        .nth(i + 1)
+                        .map(|(pos, _)| pos)
+                        .unwrap_or(text.len());
                     let sentence = text[start..end].trim();
                     if !sentence.is_empty() {
                         sentences.push(sentence);
@@ -234,7 +304,7 @@ impl SubtitleGenerator {
                 }
             }
         }
-        
+
         // Add remaining text if any
         if start < text.len() {
             let sentence = text[start..].trim();
@@ -242,12 +312,12 @@ impl SubtitleGenerator {
                 sentences.push(sentence);
             }
         }
-        
+
         // If no sentences were found, return the whole text
         if sentences.is_empty() {
             sentences.push(text.trim());
         }
-        
+
         sentences
     }
 }

@@ -6,45 +6,50 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
 use super::style;
+use crate::app::App;
 
 pub fn draw(frame: &mut Frame, _app: &App) {
     let area = frame.area();
 
     // Create main layout
     let chunks = Layout::vertical([
-        Constraint::Length(3),  // Title
-        Constraint::Min(10),    // Content
-        Constraint::Length(3),  // Footer
+        Constraint::Length(3), // Title
+        Constraint::Min(10),   // Content
+        Constraint::Length(3), // Footer
     ])
     .split(area);
 
     // Title
     let title = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("╔═══════════════════════════════════════════════════╗", style::title_style()),
-        ]),
+        Line::from(vec![Span::styled(
+            "╔═══════════════════════════════════════════════════╗",
+            style::title_style(),
+        )]),
         Line::from(vec![
             Span::styled("║          ", style::title_style()),
-            Span::styled("AUTO-SUBS TUI", Style::default().fg(style::ACCENT_PRIMARY).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "AUTO-SUBS TUI",
+                Style::default()
+                    .fg(style::ACCENT_PRIMARY)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("  •  ", style::muted_style()),
             Span::styled("Subtitle Creator", style::subtitle_style()),
             Span::styled("          ║", style::title_style()),
         ]),
-        Line::from(vec![
-            Span::styled("╚═══════════════════════════════════════════════════╝", style::title_style()),
-        ]),
+        Line::from(vec![Span::styled(
+            "╚═══════════════════════════════════════════════════╝",
+            style::title_style(),
+        )]),
     ])
     .alignment(Alignment::Center);
     frame.render_widget(title, chunks[0]);
 
     // Main content
-    let content_chunks = Layout::horizontal([
-        Constraint::Percentage(50),
-        Constraint::Percentage(50),
-    ])
-    .split(chunks[1]);
+    let content_chunks =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(chunks[1]);
 
     // Left panel - Workflow
     let workflow = Paragraph::new(vec![
@@ -100,9 +105,10 @@ pub fn draw(frame: &mut Frame, _app: &App) {
             Span::styled("Hardcode into video", style::muted_style()),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  └──────────────────────────────┘", style::muted_style()),
-        ]),
+        Line::from(vec![Span::styled(
+            "  └──────────────────────────────┘",
+            style::muted_style(),
+        )]),
     ])
     .block(Block::default().borders(Borders::NONE));
     frame.render_widget(workflow, content_chunks[0]);
@@ -131,9 +137,10 @@ pub fn draw(frame: &mut Frame, _app: &App) {
             Span::styled("Quit", style::normal_style()),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  └───────────────────────────────┘", style::muted_style()),
-        ]),
+        Line::from(vec![Span::styled(
+            "  └───────────────────────────────┘",
+            style::muted_style(),
+        )]),
         Line::from(""),
         Line::from(""),
         Line::from(vec![
@@ -149,9 +156,10 @@ pub fn draw(frame: &mut Frame, _app: &App) {
 
     // Footer
     let footer = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("─".repeat(area.width as usize), style::muted_style()),
-        ]),
+        Line::from(vec![Span::styled(
+            "─".repeat(area.width as usize),
+            style::muted_style(),
+        )]),
         Line::from(vec![
             Span::styled("  Press ", style::muted_style()),
             Span::styled("Enter", style::key_style()),

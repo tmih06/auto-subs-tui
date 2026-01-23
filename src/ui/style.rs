@@ -3,7 +3,7 @@ use ratatui::style::{Color, Modifier, Style};
 // Color palette - cyberpunk/modern theme
 pub const BG_PRIMARY: Color = Color::Rgb(15, 15, 25);
 pub const BG_SECONDARY: Color = Color::Rgb(25, 25, 40);
-pub const ACCENT_PRIMARY: Color = Color::Rgb(0, 200, 255);   // Cyan
+pub const ACCENT_PRIMARY: Color = Color::Rgb(0, 200, 255); // Cyan
 pub const ACCENT_SECONDARY: Color = Color::Rgb(255, 100, 150); // Pink
 pub const TEXT_PRIMARY: Color = Color::Rgb(230, 230, 240);
 pub const TEXT_SECONDARY: Color = Color::Rgb(150, 150, 170);
@@ -20,8 +20,7 @@ pub fn title_style() -> Style {
 }
 
 pub fn subtitle_style() -> Style {
-    Style::default()
-        .fg(TEXT_SECONDARY)
+    Style::default().fg(TEXT_SECONDARY)
 }
 
 pub fn highlight_style() -> Style {
@@ -58,7 +57,5 @@ pub fn border_style() -> Style {
 }
 
 pub fn progress_style() -> Style {
-    Style::default()
-        .fg(ACCENT_PRIMARY)
-        .bg(BG_SECONDARY)
+    Style::default().fg(ACCENT_PRIMARY).bg(BG_SECONDARY)
 }

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::Sender;
 
 use crate::app::ProgressMessage;
@@ -9,6 +9,9 @@ pub struct SubtitleBurner {
     pub use_overlay: bool,
     pub keep_overlay: bool,
     pub overlay_height: Option<u32>,
+    pub overlay_width: Option<u32>,
+    pub overlay_x_offset: Option<i32>,
+    pub overlay_y_offset: Option<i32>,
 }
 
 impl SubtitleBurner {
@@ -17,6 +20,9 @@ impl SubtitleBurner {
             use_overlay: true,
             keep_overlay: false,
             overlay_height: None,
+            overlay_width: None,
+            overlay_x_offset: None,
+            overlay_y_offset: None,
         }
     }
 
@@ -35,6 +41,288 @@ impl SubtitleBurner {
         self
     }
 
+    pub fn with_overlay_width(mut self, width: u32) -> Self {
+        self.overlay_width = Some(width);
+        self
+    }
+
+    pub fn with_overlay_x_offset(mut self, offset: i32) -> Self {
+        self.overlay_x_offset = Some(offset);
+        self
+    }
+
+    pub fn with_overlay_y_offset(mut self, offset: i32) -> Self {
+        self.overlay_y_offset = Some(offset);
+        self
+    }
+
+    /// Preview video with overlay positioned (launches external player)
+    pub fn preview_with_overlay(
+        &self,
+        video_path: &Path,
+        srt_path: &Path,
+        progress_tx: Sender<ProgressMessage>,
+    ) -> Result<()> {
+        let _ = progress_tx.send(ProgressMessage::Progress(
+            0.1,
+            "Preparing preview...".to_string(),
+        ));
+
+        // Get video dimensions
+        let (video_width, video_height) = self.get_video_dimensions(video_path)?;
+
+        // Calculate overlay dimensions and position
+        let overlay_height = self.overlay_height.unwrap_or(200);
+        let overlay_width = self.overlay_width.unwrap_or(video_width);
+
+        let x_offset = self.overlay_x_offset.unwrap_or(0);
+        let x_centered = ((video_width - overlay_width) / 2) as i32;
+        let x_position = (x_centered + x_offset).max(0);
+
+        let y_offset = self.overlay_y_offset.unwrap_or(0);
+        let y_bottom = (video_height - overlay_height) as i32;
+        let y_position = (y_bottom + y_offset).max(0);
+
+        // Escape the SRT path for FFmpeg filter
+        let srt_path_str = srt_path
+            .to_str()
+            .unwrap()
+            .replace("\\", "/")
+            .replace(":", "\\:");
+
+        // Calculate font size based on overlay height
+        let font_size = (overlay_height as f64 * 0.38).max(24.0) as u32;
+        let margin_v = (overlay_height as f64 * 0.1) as u32;
+
+        let _ = progress_tx.send(ProgressMessage::Progress(
+            0.5,
+            format!(
+                "Launching preview (Overlay: {}x{} at {},{})",
+                overlay_width, overlay_height, x_position, y_position
+            ),
+        ));
+
+        // Create filter to overlay subtitles directly on video
+        // This creates a transparent overlay and positions it
+        let filter = format!(
+            "subtitles='{}':force_style='FontSize={},MarginV={}'",
+            srt_path_str, font_size, margin_v
+        );
+
+        // Try ffplay first, then mpv as fallback
+        let player_result = self.try_launch_player(
+            video_path,
+            &filter,
+            "ffplay",
+            &[
+                "-i",
+                video_path.to_str().unwrap(),
+                "-vf",
+                &filter,
+                "-window_title",
+                "Subtitle Preview (Press Q to close)",
+                "-autoexit",
+            ],
+        );
+
+        if player_result.is_err() {
+            // Try mpv as fallback
+            let _ = progress_tx.send(ProgressMessage::Progress(
+                0.6,
+                "ffplay not found, trying mpv...".to_string(),
+            ));
+
+            self.try_launch_player(
+                video_path,
+                &filter,
+                "mpv",
+                &[
+                    video_path.to_str().unwrap(),
+                    &format!("--vf=lavfi=[{}]", filter),
+                    "--title=Subtitle Preview (Press Q to close)",
+                    "--keep-open=no",
+                ],
+            )?;
+        }
+
+        let _ = progress_tx.send(ProgressMessage::Progress(1.0, "Preview closed".to_string()));
+        let _ = progress_tx.send(ProgressMessage::Complete);
+
+        Ok(())
+    }
+
+    /// Launch preview process without blocking - returns the Child process
+    /// Uses MPV with IPC for real-time overlay updates (no video restart needed)
+    pub fn launch_preview_process_with_ipc(
+        &self,
+        video_path: &Path,
+        srt_path: &Path,
+        socket_path: &Path,
+    ) -> Result<(Child, u32, u32)> {
+        // Get video dimensions
+        let (video_width, video_height) = self.get_video_dimensions(video_path)?;
+
+        // Calculate overlay dimensions and position
+        let overlay_height = self.overlay_height.unwrap_or(200);
+        let overlay_width = self.overlay_width.unwrap_or(video_width);
+
+        let x_offset = self.overlay_x_offset.unwrap_or(0);
+        let x_centered = if overlay_width > video_width {
+            0
+        } else {
+            ((video_width - overlay_width) / 2) as i32
+        };
+        let x_position = (x_centered + x_offset).max(0);
+
+        let y_offset = self.overlay_y_offset.unwrap_or(0);
+        let y_bottom = if overlay_height > video_height {
+            0
+        } else {
+            (video_height - overlay_height) as i32
+        };
+        let y_position = (y_bottom + y_offset).max(0);
+
+        // Calculate font size based on overlay height
+        let font_size = (overlay_height as f64 * 0.38).max(24.0) as u32;
+
+        // Create drawbox filter to show subtitle area
+        let drawbox_filter = format!(
+            "drawbox=x={}:y={}:w={}:h={}:color=yellow@0.3:t=3",
+            x_position, y_position, overlay_width, overlay_height
+        );
+
+        // Launch MPV with IPC socket
+        // Use simple approach: subtitles via --sub-file, overlay via --vf
+        // DEBUG: Don't suppress stderr to see errors
+        let child = Command::new("mpv")
+            .arg(format!(
+                "--input-ipc-server={}",
+                socket_path.to_str().unwrap()
+            ))
+            .arg("--loop-file=inf")
+            .arg("--keep-open=yes")
+            .arg(format!(
+                "--title=Preview - Adjust: h/H w/W x/X y/Y (p=stop)"
+            ))
+            .arg(format!("--sub-file={}", srt_path.to_str().unwrap()))
+            .arg(format!("--sub-font-size={}", font_size))
+            .arg(format!("--vf={}", drawbox_filter))
+            .arg(video_path.to_str().unwrap())
+            // Temporarily show errors for debugging
+            .stderr(Stdio::inherit())
+            .spawn()
+            .context("Failed to launch MPV. Please install mpv.")?;
+
+        Ok((child, video_width, video_height))
+    }
+
+    /// Launch preview process without blocking - returns the Child process
+    /// This allows the preview to run in background while UI remains responsive
+    pub fn launch_preview_process(&self, video_path: &Path, srt_path: &Path) -> Result<Child> {
+        // Get video dimensions
+        let (video_width, video_height) = self.get_video_dimensions(video_path)?;
+
+        // Calculate overlay dimensions and position
+        let overlay_height = self.overlay_height.unwrap_or(200);
+        let overlay_width = self.overlay_width.unwrap_or(video_width);
+
+        let x_offset = self.overlay_x_offset.unwrap_or(0);
+        // Prevent underflow if overlay_width > video_width
+        let x_centered = if overlay_width > video_width {
+            0
+        } else {
+            ((video_width - overlay_width) / 2) as i32
+        };
+        let _x_position = (x_centered + x_offset).max(0);
+
+        let y_offset = self.overlay_y_offset.unwrap_or(0);
+        // Prevent underflow if overlay_height > video_height
+        let y_bottom = if overlay_height > video_height {
+            0
+        } else {
+            (video_height - overlay_height) as i32
+        };
+        let _y_position = (y_bottom + y_offset).max(0);
+
+        // Escape the SRT path for FFmpeg filter
+        let srt_path_str = srt_path
+            .to_str()
+            .unwrap()
+            .replace("\\", "/")
+            .replace(":", "\\:");
+
+        // Calculate font size based on overlay height
+        let font_size = (overlay_height as f64 * 0.38).max(24.0) as u32;
+        let margin_v = (overlay_height as f64 * 0.1) as u32;
+
+        // Create filter to overlay subtitles directly on video
+        let filter = format!(
+            "subtitles='{}':force_style='FontSize={},MarginV={}'",
+            srt_path_str, font_size, margin_v
+        );
+
+        // Try ffplay first
+        let child = Command::new("ffplay")
+            .args([
+                "-i",
+                video_path.to_str().unwrap(),
+                "-vf",
+                &filter,
+                "-window_title",
+                "Subtitle Preview (Press Q to close, or P in editor to stop)",
+                "-autoexit",
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+
+        match child {
+            Ok(child) => Ok(child),
+            Err(_) => {
+                // Try mpv as fallback
+                Ok(Command::new("mpv")
+                    .args([
+                        video_path.to_str().unwrap(),
+                        &format!("--vf=lavfi=[{}]", filter),
+                        "--title=Subtitle Preview (Press Q to close, or P in editor to stop)",
+                        "--keep-open=no",
+                    ])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .context("Failed to launch ffplay or mpv. Please install one of them.")?)
+            }
+        }
+    }
+
+    fn try_launch_player(
+        &self,
+        _video_path: &Path,
+        _filter: &str,
+        player: &str,
+        args: &[&str],
+    ) -> Result<()> {
+        // Check if player exists
+        Command::new(player)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .context(format!("{} not found", player))?;
+
+        // Launch player and wait for it to close
+        let status = Command::new(player)
+            .args(args)
+            .status()
+            .context(format!("Failed to launch {}", player))?;
+
+        if !status.success() {
+            anyhow::bail!("{} exited with error", player);
+        }
+
+        Ok(())
+    }
+
     /// Burn subtitles into video using FFmpeg
     /// Uses overlay method: creates transparent subtitle overlay, then merges with video
     pub fn burn(
@@ -49,6 +337,58 @@ impl SubtitleBurner {
         } else {
             self.burn_direct(video_path, srt_path, output_path, progress_tx)
         }
+    }
+
+    /// Extract subtitle overlay only without burning into video
+    pub fn extract_overlay(
+        &self,
+        video_path: &Path,
+        srt_path: &Path,
+        output_path: &Path,
+        progress_tx: Sender<ProgressMessage>,
+    ) -> Result<()> {
+        let _ = progress_tx.send(ProgressMessage::Progress(
+            0.05,
+            "Creating subtitle overlay...".to_string(),
+        ));
+
+        // Get video dimensions
+        let (width, height) = self.get_video_dimensions(video_path)?;
+
+        // Calculate overlay dimensions
+        let overlay_height = self.overlay_height.unwrap_or(200);
+        let overlay_width = self.overlay_width.unwrap_or(width);
+
+        let _ = progress_tx.send(ProgressMessage::Progress(
+            0.1,
+            format!(
+                "Video: {}x{}, Overlay: {}x{}",
+                width, height, overlay_width, overlay_height
+            ),
+        ));
+
+        let _ = progress_tx.send(ProgressMessage::Progress(
+            0.2,
+            "Generating overlay with subtitles...".to_string(),
+        ));
+
+        // Create the subtitle overlay
+        self.create_subtitle_overlay(
+            video_path,
+            srt_path,
+            output_path,
+            overlay_width,
+            overlay_height,
+            width,
+        )?;
+
+        let _ = progress_tx.send(ProgressMessage::Progress(
+            1.0,
+            format!("Overlay saved to: {}", output_path.display()),
+        ));
+        let _ = progress_tx.send(ProgressMessage::Complete);
+
+        Ok(())
     }
 
     /// Create subtitle overlay and merge with video
@@ -66,15 +406,18 @@ impl SubtitleBurner {
 
         // Get video dimensions
         let (width, height) = self.get_video_dimensions(video_path)?;
-        
+
         // Calculate overlay dimensions
         // Keep full width, but use compact height for subtitles
         let overlay_height = self.overlay_height.unwrap_or(200); // Default: 200px for subtitle area
-        let overlay_width = width;
+        let overlay_width = self.overlay_width.unwrap_or(width); // Default: full video width
 
         let _ = progress_tx.send(ProgressMessage::Progress(
             0.1,
-            format!("Video: {}x{}, Overlay: {}x{} (compact subtitle area)", width, height, overlay_width, overlay_height),
+            format!(
+                "Video: {}x{}, Overlay: {}x{} (compact subtitle area)",
+                width, height, overlay_width, overlay_height
+            ),
         ));
 
         // Create temporary overlay file path
@@ -104,12 +447,7 @@ impl SubtitleBurner {
         ));
 
         // Step 2: Position overlay at bottom of video
-        self.merge_overlay(
-            video_path,
-            &overlay_path,
-            output_path,
-            height,
-        )?;
+        self.merge_overlay(video_path, &overlay_path, output_path, width, height)?;
 
         // Cleanup temporary overlay file unless user wants to keep it
         if !self.keep_overlay {
@@ -149,7 +487,9 @@ impl SubtitleBurner {
         let fps = self.get_video_fps(video_path)?;
 
         // Escape the SRT path for FFmpeg filter
-        let srt_path_str = srt_path.to_str().unwrap()
+        let srt_path_str = srt_path
+            .to_str()
+            .unwrap()
             .replace("\\", "/")
             .replace(":", "\\:");
 
@@ -170,13 +510,20 @@ impl SubtitleBurner {
 
         let output = Command::new("ffmpeg")
             .args([
-                "-f", "lavfi",
-                "-i", &filter,
-                "-r", &fps.to_string(),
-                "-c:v", "libvpx-vp9",
-                "-pix_fmt", "yuva420p",
-                "-auto-alt-ref", "0",
-                "-b:v", "1M",
+                "-f",
+                "lavfi",
+                "-i",
+                &filter,
+                "-r",
+                &fps.to_string(),
+                "-c:v",
+                "libvpx-vp9",
+                "-pix_fmt",
+                "yuva420p",
+                "-auto-alt-ref",
+                "0",
+                "-b:v",
+                "1M",
                 "-y",
                 overlay_path.to_str().unwrap(),
             ])
@@ -199,21 +546,33 @@ impl SubtitleBurner {
         video_path: &Path,
         overlay_path: &Path,
         output_path: &Path,
+        video_width: u32,
         video_height: u32,
     ) -> Result<()> {
-        // Get overlay height to calculate position
-        let overlay_height = self.get_overlay_height(overlay_path)?;
-        
-        // Position overlay at bottom of video
-        let y_position = video_height - overlay_height;
+        // Get overlay dimensions to calculate position
+        let (overlay_width, overlay_height) = self.get_video_dimensions(overlay_path)?;
 
-        // Use overlay filter to combine videos at bottom
+        // Calculate X position (centered by default, or with offset)
+        let x_offset = self.overlay_x_offset.unwrap_or(0);
+        let x_centered = ((video_width - overlay_width) / 2) as i32;
+        let x_position = (x_centered + x_offset).max(0);
+
+        // Calculate Y position (at bottom by default, or with offset)
+        let y_offset = self.overlay_y_offset.unwrap_or(0);
+        let y_bottom = (video_height - overlay_height) as i32;
+        let y_position = (y_bottom + y_offset).max(0);
+
+        // Use overlay filter to combine videos
         let output = Command::new("ffmpeg")
             .args([
-                "-i", video_path.to_str().unwrap(),
-                "-i", overlay_path.to_str().unwrap(),
-                "-filter_complex", &format!("[0:v][1:v]overlay=0:{}", y_position),
-                "-c:a", "copy",
+                "-i",
+                video_path.to_str().unwrap(),
+                "-i",
+                overlay_path.to_str().unwrap(),
+                "-filter_complex",
+                &format!("[0:v][1:v]overlay={}:{}", x_position, y_position),
+                "-c:a",
+                "copy",
                 "-y",
                 output_path.to_str().unwrap(),
             ])
@@ -243,7 +602,11 @@ impl SubtitleBurner {
             "Using direct burn method...".to_string(),
         ));
 
-        let srt_path_str = srt_path.to_str().unwrap().replace("\\", "/").replace(":", "\\:");
+        let srt_path_str = srt_path
+            .to_str()
+            .unwrap()
+            .replace("\\", "/")
+            .replace(":", "\\:");
 
         let _ = progress_tx.send(ProgressMessage::Progress(
             0.2,
@@ -252,9 +615,12 @@ impl SubtitleBurner {
 
         let output = Command::new("ffmpeg")
             .args([
-                "-i", video_path.to_str().unwrap(),
-                "-vf", &format!("subtitles='{}'", srt_path_str),
-                "-c:a", "copy",
+                "-i",
+                video_path.to_str().unwrap(),
+                "-vf",
+                &format!("subtitles='{}'", srt_path_str),
+                "-c:a",
+                "copy",
                 "-y",
                 output_path.to_str().unwrap(),
             ])
@@ -281,10 +647,14 @@ impl SubtitleBurner {
     fn get_video_fps(&self, video_path: &Path) -> Result<u32> {
         let output = Command::new("ffprobe")
             .args([
-                "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=r_frame_rate",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=r_frame_rate",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 video_path.to_str().unwrap(),
             ])
             .output()
@@ -292,7 +662,7 @@ impl SubtitleBurner {
 
         let fps_str = String::from_utf8_lossy(&output.stdout);
         let parts: Vec<&str> = fps_str.trim().split('/').collect();
-        
+
         if parts.len() == 2 {
             let num = parts[0].parse::<f64>().unwrap_or(30.0);
             let den = parts[1].parse::<f64>().unwrap_or(1.0);
@@ -312,10 +682,14 @@ impl SubtitleBurner {
     fn get_video_dimensions(&self, video_path: &Path) -> Result<(u32, u32)> {
         let output = Command::new("ffprobe")
             .args([
-                "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=width,height",
-                "-of", "csv=s=x:p=0",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=s=x:p=0",
                 video_path.to_str().unwrap(),
             ])
             .output()
@@ -323,7 +697,7 @@ impl SubtitleBurner {
 
         let dimensions = String::from_utf8_lossy(&output.stdout);
         let parts: Vec<&str> = dimensions.trim().split('x').collect();
-        
+
         if parts.len() != 2 {
             anyhow::bail!("Failed to parse video dimensions");
         }
@@ -338,15 +712,21 @@ impl SubtitleBurner {
     fn get_video_duration(&self, video_path: &Path) -> Result<f64> {
         let output = Command::new("ffprobe")
             .args([
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 video_path.to_str().unwrap(),
             ])
             .output()
             .context("Failed to get video duration")?;
 
         let duration_str = String::from_utf8_lossy(&output.stdout);
-        duration_str.trim().parse::<f64>().context("Invalid duration")
+        duration_str
+            .trim()
+            .parse::<f64>()
+            .context("Invalid duration")
     }
 }

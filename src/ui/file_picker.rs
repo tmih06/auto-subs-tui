@@ -6,8 +6,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
 use super::style;
+use crate::app::App;
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
@@ -21,23 +21,25 @@ pub fn draw(frame: &mut Frame, app: &App) {
     .split(area);
 
     // Title
-    let title = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("┌─", style::border_style()),
-            Span::styled(" SELECT VIDEO FILE ", style::title_style()),
-            Span::styled("─".repeat((area.width as usize).saturating_sub(24)), style::border_style()),
-            Span::styled("┐", style::border_style()),
-        ]),
-    ]);
+    let title = Paragraph::new(vec![Line::from(vec![
+        Span::styled("┌─", style::border_style()),
+        Span::styled(" SELECT VIDEO FILE ", style::title_style()),
+        Span::styled(
+            "─".repeat((area.width as usize).saturating_sub(24)),
+            style::border_style(),
+        ),
+        Span::styled("┐", style::border_style()),
+    ])]);
     frame.render_widget(title, chunks[0]);
 
     // Current directory
-    let path_display = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("  📁 ", style::key_style()),
-            Span::styled(app.file_browser.current_dir.display().to_string(), style::normal_style()),
-        ]),
-    ]);
+    let path_display = Paragraph::new(vec![Line::from(vec![
+        Span::styled("  📁 ", style::key_style()),
+        Span::styled(
+            app.file_browser.current_dir.display().to_string(),
+            style::normal_style(),
+        ),
+    ])]);
     frame.render_widget(path_display, chunks[1]);
 
     // File list
@@ -75,19 +77,21 @@ pub fn draw(frame: &mut Frame, app: &App) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::LEFT | Borders::RIGHT)
-                .border_style(style::border_style()),
-        );
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::LEFT | Borders::RIGHT)
+            .border_style(style::border_style()),
+    );
     frame.render_widget(list, chunks[2]);
 
     // Help
     let help = Paragraph::new(vec![
         Line::from(vec![
             Span::styled("└", style::border_style()),
-            Span::styled("─".repeat((area.width as usize).saturating_sub(2)), style::border_style()),
+            Span::styled(
+                "─".repeat((area.width as usize).saturating_sub(2)),
+                style::border_style(),
+            ),
             Span::styled("┘", style::border_style()),
         ]),
         Line::from(vec![

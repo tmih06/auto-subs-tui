@@ -40,3 +40,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dirs = "5.0"
 hound = "3.5"  # WAV file reading for whisper
 ureq = "2.9"   # HTTP client for model download
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

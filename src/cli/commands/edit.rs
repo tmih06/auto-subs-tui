@@ -1,6 +1,6 @@
-use anyhow::Result;
-use crate::cli::args::EditArgs;
 use crate::app::App;
+use crate::cli::args::EditArgs;
+use anyhow::Result;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
@@ -34,11 +34,7 @@ pub async fn execute(args: EditArgs) -> Result<()> {
 
     // Restore terminal
     disable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
 
     result
 }

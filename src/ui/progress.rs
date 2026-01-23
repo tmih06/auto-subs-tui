@@ -5,8 +5,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
 use super::style;
+use crate::app::App;
 
 pub fn draw(frame: &mut Frame, app: &App, title: &str) {
     let area = frame.area();
@@ -26,29 +26,32 @@ pub fn draw(frame: &mut Frame, app: &App, title: &str) {
     .split(center);
 
     // Title
-    let title_widget = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("╔═══", style::border_style()),
-            Span::styled(format!(" {} ", title), style::title_style()),
-            Span::styled("═══╗", style::border_style()),
-        ]),
-    ])
+    let title_widget = Paragraph::new(vec![Line::from(vec![
+        Span::styled("╔═══", style::border_style()),
+        Span::styled(format!(" {} ", title), style::title_style()),
+        Span::styled("═══╗", style::border_style()),
+    ])])
     .alignment(Alignment::Center);
     frame.render_widget(title_widget, chunks[0]);
 
     // Progress bar
     let progress_percent = (app.progress * 100.0) as u16;
     let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::ALL).border_style(style::border_style()))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(style::border_style()),
+        )
         .gauge_style(style::progress_style())
         .percent(progress_percent)
         .label(format!("{}%", progress_percent));
     frame.render_widget(gauge, chunks[2]);
 
     // Message
-    let message = Paragraph::new(vec![Line::from(vec![
-        Span::styled(&app.progress_message, style::normal_style()),
-    ])])
+    let message = Paragraph::new(vec![Line::from(vec![Span::styled(
+        &app.progress_message,
+        style::normal_style(),
+    )])])
     .alignment(Alignment::Center);
     frame.render_widget(message, chunks[4]);
 
@@ -64,21 +67,17 @@ pub fn draw(frame: &mut Frame, app: &App, title: &str) {
 
     // If we have an error, show it
     if let Some(error) = &app.error_message {
-        let error_widget = Paragraph::new(vec![
-            Line::from(vec![
-                Span::styled("⚠ Error: ", style::error_style()),
-                Span::styled(error, style::error_style()),
-            ]),
-        ])
+        let error_widget = Paragraph::new(vec![Line::from(vec![
+            Span::styled("⚠ Error: ", style::error_style()),
+            Span::styled(error, style::error_style()),
+        ])])
         .alignment(Alignment::Center);
         frame.render_widget(error_widget, chunks[5]);
     } else {
-        let spinner_widget = Paragraph::new(vec![
-            Line::from(vec![
-                Span::styled(spinner, style::key_style()),
-                Span::styled(" Processing... ", style::muted_style()),
-            ]),
-        ])
+        let spinner_widget = Paragraph::new(vec![Line::from(vec![
+            Span::styled(spinner, style::key_style()),
+            Span::styled(" Processing... ", style::muted_style()),
+        ])])
         .alignment(Alignment::Center);
         frame.render_widget(spinner_widget, chunks[5]);
     }

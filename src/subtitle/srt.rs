@@ -36,12 +36,12 @@ impl Subtitle {
         if parts.len() != 4 {
             anyhow::bail!("Invalid time format: {}", s);
         }
-        
+
         let hours: u64 = parts[0].parse().context("Invalid hours")?;
         let minutes: u64 = parts[1].parse().context("Invalid minutes")?;
         let seconds: u64 = parts[2].parse().context("Invalid seconds")?;
         let millis: u64 = parts[3].parse().context("Invalid milliseconds")?;
-        
+
         Ok(hours * 3_600_000 + minutes * 60_000 + seconds * 1_000 + millis)
     }
 
@@ -79,8 +79,11 @@ pub fn parse_srt_string(content: &str) -> Result<Vec<Subtitle>> {
             Some(l) if !l.trim().is_empty() => l,
             _ => break,
         };
-        
-        let index: usize = index_line.trim().parse().context("Invalid subtitle index")?;
+
+        let index: usize = index_line
+            .trim()
+            .parse()
+            .context("Invalid subtitle index")?;
 
         // Parse time range
         let time_line = lines.next().context("Expected time range")?;
@@ -88,7 +91,7 @@ pub fn parse_srt_string(content: &str) -> Result<Vec<Subtitle>> {
         if parts.len() != 2 {
             anyhow::bail!("Invalid time range: {}", time_line);
         }
-        
+
         let start_time = Subtitle::parse_time(parts[0].trim())?;
         let end_time = Subtitle::parse_time(parts[1].trim())?;
 
@@ -115,7 +118,7 @@ pub fn save_srt(path: &Path, subtitles: &[Subtitle]) -> Result<()> {
         .map(|s| s.to_srt())
         .collect::<Vec<_>>()
         .join("\n");
-    
+
     fs::write(path, content).context("Failed to write SRT file")?;
     Ok(())
 }

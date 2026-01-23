@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::cli::args::ConfigArgs;
+use anyhow::Result;
 use std::path::PathBuf;
 
 pub async fn execute(args: ConfigArgs) -> Result<()> {
@@ -37,7 +37,7 @@ pub async fn execute(args: ConfigArgs) -> Result<()> {
     println!("  --show   Show current configuration");
     println!("  --init   Initialize default configuration file");
     println!("  --path   Show configuration file path");
-    
+
     Ok(())
 }
 

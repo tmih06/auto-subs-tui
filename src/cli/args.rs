@@ -115,6 +115,18 @@ pub struct ProcessArgs {
     /// Overlay video height in pixels (default: 1/4 of video height)
     #[arg(long)]
     pub overlay_height: Option<u32>,
+
+    /// Overlay X position offset in pixels (default: 0, centered)
+    #[arg(long)]
+    pub overlay_x_offset: Option<i32>,
+
+    /// Overlay Y position offset in pixels (default: 0, at bottom)
+    #[arg(long)]
+    pub overlay_y_offset: Option<i32>,
+
+    /// Overlay width in pixels (default: video width)
+    #[arg(long)]
+    pub overlay_width: Option<u32>,
 }
 
 #[derive(Parser, Debug)]
@@ -224,6 +236,18 @@ pub struct BurnArgs {
     /// Overlay video height in pixels (default: 1/4 of video height)
     #[arg(long)]
     pub overlay_height: Option<u32>,
+
+    /// Overlay X position offset in pixels (default: 0, centered)
+    #[arg(long)]
+    pub overlay_x_offset: Option<i32>,
+
+    /// Overlay Y position offset in pixels (default: 0, at bottom)
+    #[arg(long)]
+    pub overlay_y_offset: Option<i32>,
+
+    /// Overlay width in pixels (default: video width)
+    #[arg(long)]
+    pub overlay_width: Option<u32>,
 }
 
 #[derive(Parser, Debug)]

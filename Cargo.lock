@@ -98,6 +98,7 @@ dependencies = [
  "dirs",
  "ffmpeg-sidecar",
  "hound",
+ "libc",
  "ratatui",
  "serde",
  "srtlib",

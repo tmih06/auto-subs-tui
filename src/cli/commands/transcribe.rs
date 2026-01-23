@@ -1,8 +1,8 @@
-use anyhow::Result;
-use std::sync::mpsc;
-use crate::subtitle::generator::SubtitleGenerator;
 use crate::app::ProgressMessage;
 use crate::cli::args::TranscribeArgs;
+use crate::subtitle::generator::SubtitleGenerator;
+use anyhow::Result;
+use std::sync::mpsc;
 
 pub async fn execute(args: TranscribeArgs) -> Result<()> {
     println!("╔════════════════════════════════════════════════════════════╗");
@@ -15,9 +15,10 @@ pub async fn execute(args: TranscribeArgs) -> Result<()> {
     }
 
     // Determine output path
-    let output_path = args.output.clone().unwrap_or_else(|| {
-        args.input.with_extension("srt")
-    });
+    let output_path = args
+        .output
+        .clone()
+        .unwrap_or_else(|| args.input.with_extension("srt"));
 
     println!("🎵 Input audio: {}", args.input.display());
     println!("📄 Output SRT: {}", output_path.display());
@@ -26,12 +27,15 @@ pub async fn execute(args: TranscribeArgs) -> Result<()> {
     println!("🔧 Provider: {}\n", args.provider);
 
     // Generate subtitles
-    println!("Generating subtitles with Whisper ({})...", args.model.as_str());
+    println!(
+        "Generating subtitles with Whisper ({})...",
+        args.model.as_str()
+    );
     println!("(This may download the model on first run)");
-    
+
     let (tx, rx) = mpsc::channel();
     let generator = SubtitleGenerator::new();
-    
+
     let input_clone = args.input.clone();
     let output_clone = output_path.clone();
     std::thread::spawn(move || {

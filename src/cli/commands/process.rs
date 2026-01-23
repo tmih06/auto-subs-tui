@@ -1,10 +1,10 @@
+use crate::app::ProgressMessage;
+use crate::audio::extractor::AudioExtractor;
+use crate::cli::args::ProcessArgs;
+use crate::subtitle::burner::SubtitleBurner;
+use crate::subtitle::generator::SubtitleGenerator;
 use anyhow::Result;
 use std::sync::mpsc;
-use crate::audio::extractor::AudioExtractor;
-use crate::subtitle::generator::SubtitleGenerator;
-use crate::subtitle::burner::SubtitleBurner;
-use crate::app::ProgressMessage;
-use crate::cli::args::ProcessArgs;
 
 pub async fn execute(args: ProcessArgs) -> Result<()> {
     println!("╔════════════════════════════════════════════════════════════╗");
@@ -20,14 +20,16 @@ pub async fn execute(args: ProcessArgs) -> Result<()> {
     println!("🌍 Language: {}\n", args.language);
 
     // Determine output paths
-    let audio_path = args.audio_output.clone().unwrap_or_else(|| {
-        args.input.with_extension("wav")
-    });
-    
-    let srt_path = args.srt_output.clone().unwrap_or_else(|| {
-        args.input.with_extension("srt")
-    });
-    
+    let audio_path = args
+        .audio_output
+        .clone()
+        .unwrap_or_else(|| args.input.with_extension("wav"));
+
+    let srt_path = args
+        .srt_output
+        .clone()
+        .unwrap_or_else(|| args.input.with_extension("srt"));
+
     let output_path = args.output.clone().unwrap_or_else(|| {
         args.input.with_file_name(format!(
             "{}_subtitled.{}",
@@ -40,7 +42,7 @@ pub async fn execute(args: ProcessArgs) -> Result<()> {
     println!("[1/3] Extracting audio...");
     let (tx, rx) = mpsc::channel();
     let extractor = AudioExtractor::new();
-    
+
     let video_clone = args.input.clone();
     let audio_clone = audio_path.clone();
     std::thread::spawn(move || {
@@ -59,11 +61,14 @@ pub async fn execute(args: ProcessArgs) -> Result<()> {
     println!("      ✅ Audio extracted: {}", audio_path.display());
 
     // Step 2: Generate subtitles
-    println!("\n[2/3] Generating subtitles with Whisper ({})...", args.model.as_str());
+    println!(
+        "\n[2/3] Generating subtitles with Whisper ({})...",
+        args.model.as_str()
+    );
     println!("      (This may download the model on first run)");
     let (tx, rx) = mpsc::channel();
     let generator = SubtitleGenerator::new();
-    
+
     let audio_clone = audio_path.clone();
     let srt_clone = srt_path.clone();
     std::thread::spawn(move || {
@@ -100,15 +105,24 @@ pub async fn execute(args: ProcessArgs) -> Result<()> {
         }
     }
     let (tx, rx) = mpsc::channel();
-    
+
     let mut burner = SubtitleBurner::new()
         .with_overlay(args.use_overlay)
         .keep_overlay_file(args.keep_overlay);
-    
+
     if let Some(height) = args.overlay_height {
         burner = burner.with_overlay_height(height);
     }
-    
+    if let Some(width) = args.overlay_width {
+        burner = burner.with_overlay_width(width);
+    }
+    if let Some(x_offset) = args.overlay_x_offset {
+        burner = burner.with_overlay_x_offset(x_offset);
+    }
+    if let Some(y_offset) = args.overlay_y_offset {
+        burner = burner.with_overlay_y_offset(y_offset);
+    }
+
     let video_clone = args.input.clone();
     let srt_clone = srt_path.clone();
     let output_clone = output_path.clone();
@@ -139,7 +153,7 @@ pub async fn execute(args: ProcessArgs) -> Result<()> {
     println!("\n╔════════════════════════════════════════════════════════════╗");
     println!("║                  PROCESSING COMPLETE!                      ║");
     println!("╚════════════════════════════════════════════════════════════╝");
-    
+
     if args.keep_files {
         println!("\nGenerated files:");
         println!("  📁 {}", audio_path.display());

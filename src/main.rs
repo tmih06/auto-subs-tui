@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
         eprintln!("⚠️  WARNING: The --cli flag is deprecated.");
         eprintln!("   Please use: auto-subs-tui process <video_path>");
         eprintln!("   Running in compatibility mode...\n");
-        
+
         let video_path = if args.len() >= 3 {
             &args[2]
         } else {
@@ -31,12 +31,12 @@ async fn main() -> Result<()> {
 
 /// Run headless CLI mode for the transcription pipeline (legacy support)
 async fn run_legacy_cli(video_path: &str) -> Result<()> {
-    use std::sync::mpsc;
-    use std::path::Path;
-    use audio::extractor::AudioExtractor;
-    use subtitle::generator::SubtitleGenerator;
-    use subtitle::burner::SubtitleBurner;
     use app::ProgressMessage;
+    use audio::extractor::AudioExtractor;
+    use std::path::Path;
+    use std::sync::mpsc;
+    use subtitle::burner::SubtitleBurner;
+    use subtitle::generator::SubtitleGenerator;
 
     println!("╔════════════════════════════════════════════════════════════╗");
     println!("║            AUTO-SUBS TUI - CLI MODE                        ║");
@@ -61,7 +61,7 @@ async fn run_legacy_cli(video_path: &str) -> Result<()> {
     println!("\n[1/3] Extracting audio...");
     let (tx, rx) = mpsc::channel();
     let extractor = AudioExtractor::new();
-    
+
     let video_clone = video_path.to_path_buf();
     let audio_clone = audio_path.clone();
     std::thread::spawn(move || {
@@ -85,7 +85,7 @@ async fn run_legacy_cli(video_path: &str) -> Result<()> {
     println!("      (This may download the model on first run, ~150MB)");
     let (tx, rx) = mpsc::channel();
     let generator = SubtitleGenerator::new();
-    
+
     let audio_clone = audio_path.clone();
     let srt_clone = srt_path.clone();
     std::thread::spawn(move || {
@@ -118,7 +118,7 @@ async fn run_legacy_cli(video_path: &str) -> Result<()> {
     println!("\n[3/3] Burning subtitles into video...");
     let (tx, rx) = mpsc::channel();
     let burner = SubtitleBurner::new();
-    
+
     let video_clone = video_path.to_path_buf();
     let srt_clone = srt_path.clone();
     let output_clone = output_path.clone();
